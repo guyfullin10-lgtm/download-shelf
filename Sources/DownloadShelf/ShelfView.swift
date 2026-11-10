@@ -194,25 +194,34 @@ struct ShelfView: View {
             .buttonStyle(.plain)
             .help(isSelected ? "Снять выбор" : "Выбрать")
 
-            HStack(spacing: 9) {
-                Image(nsImage: store.icon(for: item))
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: 26, height: 26)
+            ZStack {
+                HStack(spacing: 9) {
+                    Image(nsImage: store.icon(for: item))
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 26, height: 26)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(item.name)
-                        .font(.system(size: 12.5))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text(isCopied ? copiedLabel : item.subtitle)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(isCopied ? Color.green : Color.secondary)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(item.name)
+                            .font(.system(size: 12.5))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text(isCopied ? copiedLabel : item.subtitle)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(isCopied ? Color.green : Color.secondary)
+                    }
+                    Spacer(minLength: 0)
                 }
-            }
-            .contentShape(Rectangle())
+                .allowsHitTesting(false)
 
-            Spacer(minLength: 2)
+                RowInteraction(
+                    urls: { dragURLs(for: item) },
+                    onOpen: { store.open(item) },
+                    onAction: { tag in handleMenuAction(tag, item: item, isSelected: isSelected) }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity)
 
             Button {
                 copy(item)
@@ -229,16 +238,6 @@ struct ShelfView: View {
             .opacity(hoveredID == item.id || isCopied ? 1 : 0.55)
             .help(store.selectedIDs.contains(item.id) && store.selectedIDs.count > 1 ? "Скопировать выбранные" : "Скопировать файл")
 
-            ZStack {
-                MultiDragSource(urls: { dragURLs(for: item) })
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .opacity(hoveredID == item.id ? 0.9 : 0.35)
-                    .allowsHitTesting(false)
-            }
-            .frame(width: 18, height: 20)
-            .help("Перетащить")
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
@@ -250,22 +249,18 @@ struct ShelfView: View {
         .onHover { isHovering in
             hoveredID = isHovering ? item.id : (hoveredID == item.id ? nil : hoveredID)
         }
-        .onTapGesture {
-            store.open(item)
-        }
-        .contextMenu {
-            Button("Открыть") { store.open(item) }
-            Button("Показать в Finder") { store.revealInFinder(item) }
-            Button("Открыть с помощью…") { openWith(item) }
-            Divider()
-            if isSelected && store.selectedIDs.count > 1 {
-                Button("Скопировать выбранные (\(store.selectedIDs.count))") { copy(item) }
-            } else {
-                Button("Скопировать файл") { copy(item) }
-            }
-            Button("Скопировать путь") { store.copyPath(item) }
-        }
         .help(item.url.path)
+    }
+
+    private func handleMenuAction(_ tag: Int, item: DownloadItem, isSelected: Bool) {
+        switch tag {
+        case 0: store.open(item)
+        case 1: store.revealInFinder(item)
+        case 2: openWith(item)
+        case 3: copy(item)
+        case 4: store.copyPath(item)
+        default: break
+        }
     }
 
     private var copiedLabel: String {
@@ -392,40 +387,49 @@ struct ShelfView: View {
     }
 }
 
-private struct MultiDragSource: NSViewRepresentable {
+private struct RowInteraction: NSViewRepresentable {
     let urls: () -> [URL]
+    let onOpen: () -> Void
+    let onAction: (Int) -> Void
 
-    func makeNSView(context: Context) -> DragHandleView {
-        let view = DragHandleView()
+    func makeNSView(context: Context) -> RowInteractionView {
+        let view = RowInteractionView()
         view.urlsProvider = urls
+        view.onOpen = onOpen
+        view.onAction = onAction
         return view
     }
 
-    func updateNSView(_ nsView: DragHandleView, context: Context) {
+    func updateNSView(_ nsView: RowInteractionView, context: Context) {
         nsView.urlsProvider = urls
+        nsView.onOpen = onOpen
+        nsView.onAction = onAction
     }
 }
 
-final class DragHandleView: NSView, NSDraggingSource {
+final class RowInteractionView: NSView, NSDraggingSource {
     var urlsProvider: () -> [URL] = { [] }
-    private var downPoint: NSPoint?
+    var onOpen: () -> Void = {}
+    var onAction: (Int) -> Void = { _ in }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .openHand)
-    }
+    private var downPoint: NSPoint?
+    private var didDrag = false
 
     override func mouseDown(with event: NSEvent) {
         downPoint = convert(event.locationInWindow, from: nil)
+        didDrag = false
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let start = downPoint else { return }
         let point = convert(event.locationInWindow, from: nil)
         guard hypot(point.x - start.x, point.y - start.y) >= 3 else { return }
-        downPoint = nil
 
         let urls = urlsProvider()
         guard !urls.isEmpty else { return }
+
+        didDrag = true
+        downPoint = nil
 
         let icon = NSWorkspace.shared.icon(forFile: urls[0].path)
         icon.size = NSSize(width: 32, height: 32)
@@ -442,6 +446,42 @@ final class DragHandleView: NSView, NSDraggingSource {
         }
 
         beginDraggingSession(with: draggingItems, event: event, source: self)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer {
+            downPoint = nil
+            didDrag = false
+        }
+        guard !didDrag, downPoint != nil else { return }
+        onOpen()
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        let entries: [(String, Int)] = [
+            ("Открыть", 0),
+            ("Показать в Finder", 1),
+            ("Открыть с помощью…", 2),
+            ("", -1),
+            ("Скопировать", 3),
+            ("Скопировать путь", 4)
+        ]
+        for (title, tag) in entries {
+            if tag == -1 {
+                menu.addItem(.separator())
+                continue
+            }
+            let item = NSMenuItem(title: title, action: #selector(menuItemClicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = tag
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func menuItemClicked(_ sender: NSMenuItem) {
+        onAction(sender.tag)
     }
 
     func draggingSession(

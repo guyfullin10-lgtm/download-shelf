@@ -7,10 +7,10 @@ Built with SwiftUI and AppKit, no Electron, no dependencies.
 ## Features
 
 - Menu bar icon showing the last downloads from `~/Downloads`
-- **Drag out** any item into Finder, Mail, Telegram, a browser, or any app that accepts files
+- **Drag any row**: the whole row is a drag source, drop it into Finder, Mail, Telegram, a browser, or any app that accepts files
+- A plain click opens the file with its default app
 - **Multi-select with checkboxes**, then drag or copy the whole selection at once
 - One-click **copy file to clipboard** with a green checkmark so you see the click landed
-- Click a row to open the file with its default app
 - Context menu: Open, Show in Finder, Open With..., Copy file, Copy path
 - Shows 5 items, **"More 5"** adds five at a time, up to 100, plus a separate **Collapse** button
 - Auto-opens under the menu bar for 3/4/6/8 seconds when a new file arrives (configurable, can be turned off)
@@ -46,7 +46,8 @@ Other modes:
 ## Usage
 
 - Click the tray icon in the menu bar to open the shelf.
-- Tick the checkbox to select files. Drag the handle on the right of a selected row to move the whole selection.
+- Drag any row to move the file somewhere else. If several files are selected, dragging one of them moves the whole selection.
+- A plain click opens the file. Tick the checkbox to include a file in the selection.
 - The copy icon copies the file itself, not a path. With several files selected it copies all of them.
 - Settings (gear icon at the bottom): open on download (off / 3 / 4 / 6 / 8 s), launch at login, choose another folder.
 
@@ -62,7 +63,7 @@ Other modes:
 Sources/DownloadShelf/
   DownloadShelfApp.swift   App entry, status item, panel, auto-open logic
   DownloadsStore.swift     Folder watching (FSEvents), item list, clipboard, login item
-  ShelfView.swift          SwiftUI UI, checkboxes, multi-file drag handle
+  ShelfView.swift          SwiftUI UI, row drag source, checkboxes
 build.sh                   Build and install script
 ```
 
@@ -72,8 +73,8 @@ build.sh                   Build and install script
 
 - 5 последних файлов, кнопка «Ещё 5» добавляет по пять, до 100
 - Рядом отдельная кнопка «Свернуть»
+- Тянуть можно за любую строку: клик открывает файл, перетаскивание отправляет его в другое приложение
 - Выделение нескольких файлов чекбоксами и перетаскивание всей пачки
-- Перетаскивание настоящего файла в любое приложение
 - Копирование файла одной кнопкой, с зелёной галочкой
 - Автооткрытие после скачивания на 3/4/6/8 секунд (настраивается)
 - Автозапуск при входе, своя папка для наблюдения
