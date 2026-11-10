@@ -72,7 +72,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !panel.isVisible else { return }
         positionPanel()
         panel.orderFrontRegardless()
-        panel.makeKey()
         store.markSeen()
         installMonitors()
     }
