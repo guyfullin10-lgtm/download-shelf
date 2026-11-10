@@ -16,7 +16,6 @@ struct ShelfView: View {
     @State private var hoveredID: String?
     @State private var copiedIDs: Set<String> = []
     @State private var visibleCount: Int = 5
-    @State private var anchorID: String?
 
     private var visibleItems: [DownloadItem] {
         Array(store.items.prefix(visibleCount))
@@ -131,27 +130,46 @@ struct ShelfView: View {
     }
 
     private var expandToggle: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.16)) {
-                if remainingCount > 0 {
-                    visibleCount = min(visibleCount + store.collapsedCount, store.items.count)
-                } else {
-                    visibleCount = store.collapsedCount
+        HStack(spacing: 10) {
+            if visibleCount > store.collapsedCount {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        visibleCount = store.collapsedCount
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("Свернуть")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
-        } label: {
-            HStack(spacing: 4) {
-                Text(remainingCount > 0 ? "Ещё \(min(store.collapsedCount, remainingCount))" : "Свернуть")
-                    .font(.system(size: 11, weight: .medium))
-                Image(systemName: remainingCount > 0 ? "chevron.down" : "chevron.up")
-                    .font(.system(size: 9, weight: .semibold))
+
+            Spacer(minLength: 0)
+
+            if remainingCount > 0 {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        visibleCount = min(visibleCount + store.collapsedCount, store.items.count)
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("Ещё \(min(store.collapsedCount, remainingCount))")
+                            .font(.system(size: 11, weight: .medium))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 5)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
     }
 
     private var listHeight: CGFloat {
@@ -163,7 +181,19 @@ struct ShelfView: View {
     private func row(for item: DownloadItem) -> some View {
         let isCopied = copiedIDs.contains(item.id)
         let isSelected = store.selectedIDs.contains(item.id)
-        return HStack(spacing: 9) {
+        return HStack(spacing: 8) {
+            Button {
+                store.toggleSelection(item)
+            } label: {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.8))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isSelected ? "Снять выбор" : "Выбрать")
+
             HStack(spacing: 9) {
                 Image(nsImage: store.icon(for: item))
                     .resizable()
@@ -221,15 +251,8 @@ struct ShelfView: View {
             hoveredID = isHovering ? item.id : (hoveredID == item.id ? nil : hoveredID)
         }
         .onTapGesture {
-            handleClick(item)
+            store.open(item)
         }
-        .gesture(TapGesture().modifiers(.command).onEnded {
-            store.toggleSelection(item)
-            anchorID = item.id
-        })
-        .gesture(TapGesture().modifiers(.shift).onEnded {
-            store.selectRange(to: item, from: anchorID)
-        })
         .contextMenu {
             Button("Открыть") { store.open(item) }
             Button("Показать в Finder") { store.revealInFinder(item) }
@@ -247,14 +270,6 @@ struct ShelfView: View {
 
     private var copiedLabel: String {
         store.selectedIDs.count > 1 ? "Скопировано \(store.selectedIDs.count)" : "Скопировано"
-    }
-
-    private func handleClick(_ item: DownloadItem) {
-        if !store.selectedIDs.isEmpty && !store.selectedIDs.contains(item.id) {
-            store.clearSelection()
-        }
-        anchorID = item.id
-        store.open(item)
     }
 
     private func dragURLs(for item: DownloadItem) -> [URL] {

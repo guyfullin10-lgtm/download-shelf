@@ -123,21 +123,6 @@ final class DownloadsStore: ObservableObject {
         }
     }
 
-    func selectOnly(_ item: DownloadItem) {
-        selectedIDs = [item.id]
-    }
-
-    func selectRange(to item: DownloadItem, from anchorID: String?) {
-        guard let anchorID,
-              let start = items.firstIndex(where: { $0.id == anchorID }),
-              let end = items.firstIndex(where: { $0.id == item.id }) else {
-            selectOnly(item)
-            return
-        }
-        let range = start <= end ? start...end : end...start
-        selectedIDs = Set(items[range].map(\.id))
-    }
-
     func clearSelection() {
         selectedIDs.removeAll()
     }
