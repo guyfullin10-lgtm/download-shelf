@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 private struct ShelfSizeKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
@@ -10,19 +11,19 @@ private struct ShelfSizeKey: PreferenceKey {
 
 struct ShelfView: View {
     @ObservedObject var store: DownloadsStore
-    var onHoverChange: ((Bool) -> Void)?
     var onSizeChange: ((CGSize) -> Void)?
 
     @State private var hoveredID: String?
-    @State private var copiedID: String?
-    @State private var expanded = false
+    @State private var copiedIDs: Set<String> = []
+    @State private var visibleCount: Int = 5
+    @State private var anchorID: String?
 
     private var visibleItems: [DownloadItem] {
-        expanded ? store.items : Array(store.items.prefix(store.collapsedCount))
+        Array(store.items.prefix(visibleCount))
     }
 
-    private var hiddenCount: Int {
-        max(store.items.count - store.collapsedCount, 0)
+    private var remainingCount: Int {
+        max(store.items.count - visibleCount, 0)
     }
 
     var body: some View {
@@ -30,7 +31,7 @@ struct ShelfView: View {
             header
             Divider()
             content
-            if hiddenCount > 0 {
+            if remainingCount > 0 || visibleCount > store.collapsedCount {
                 expandToggle
             }
             Divider()
@@ -56,15 +57,13 @@ struct ShelfView: View {
         .onPreferenceChange(ShelfSizeKey.self) { size in
             onSizeChange?(size)
         }
-        .onHover { hovering in
-            onHoverChange?(hovering)
-        }
         .onAppear {
             store.markSeen()
             store.refresh()
         }
         .onDisappear {
-            expanded = false
+            visibleCount = store.collapsedCount
+            store.clearSelection()
         }
     }
 
@@ -76,7 +75,11 @@ struct ShelfView: View {
             Text("Загрузки")
                 .font(.system(size: 13, weight: .semibold))
             Spacer()
-            if !store.items.isEmpty {
+            if !store.selectedIDs.isEmpty {
+                Text("\(store.selectedIDs.count) выбрано")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.tint)
+            } else if !store.items.isEmpty {
                 Text("\(store.items.count)")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
@@ -130,13 +133,17 @@ struct ShelfView: View {
     private var expandToggle: some View {
         Button {
             withAnimation(.easeInOut(duration: 0.16)) {
-                expanded.toggle()
+                if remainingCount > 0 {
+                    visibleCount = min(visibleCount + store.collapsedCount, store.items.count)
+                } else {
+                    visibleCount = store.collapsedCount
+                }
             }
         } label: {
             HStack(spacing: 4) {
-                Text(expanded ? "Свернуть" : "Ещё \(hiddenCount)")
+                Text(remainingCount > 0 ? "Ещё \(min(store.collapsedCount, remainingCount))" : "Свернуть")
                     .font(.system(size: 11, weight: .medium))
-                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                Image(systemName: remainingCount > 0 ? "chevron.down" : "chevron.up")
                     .font(.system(size: 9, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
@@ -154,30 +161,26 @@ struct ShelfView: View {
     }
 
     private func row(for item: DownloadItem) -> some View {
-        let isCopied = copiedID == item.id
+        let isCopied = copiedIDs.contains(item.id)
+        let isSelected = store.selectedIDs.contains(item.id)
         return HStack(spacing: 9) {
-            Button {
-                store.open(item)
-            } label: {
-                HStack(spacing: 9) {
-                    Image(nsImage: store.icon(for: item))
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: 26, height: 26)
+            HStack(spacing: 9) {
+                Image(nsImage: store.icon(for: item))
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 26, height: 26)
 
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(item.name)
-                            .font(.system(size: 12.5))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Text(isCopied ? "Скопировано" : item.subtitle)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(isCopied ? Color.green : Color.secondary)
-                    }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.name)
+                        .font(.system(size: 12.5))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(isCopied ? copiedLabel : item.subtitle)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(isCopied ? Color.green : Color.secondary)
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .contentShape(Rectangle())
 
             Spacer(minLength: 2)
 
@@ -194,53 +197,98 @@ struct ShelfView: View {
             }
             .buttonStyle(.plain)
             .opacity(hoveredID == item.id || isCopied ? 1 : 0.55)
-            .help("Скопировать файл")
+            .help(store.selectedIDs.contains(item.id) && store.selectedIDs.count > 1 ? "Скопировать выбранные" : "Скопировать файл")
 
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.tertiary)
-                .opacity(hoveredID == item.id ? 0.9 : 0.35)
+            ZStack {
+                MultiDragSource(urls: { dragURLs(for: item) })
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .opacity(hoveredID == item.id ? 0.9 : 0.35)
+                    .allowsHitTesting(false)
+            }
+            .frame(width: 18, height: 20)
+            .help("Перетащить")
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(backgroundColor(itemID: item.id, isCopied: isCopied))
+                .fill(backgroundColor(itemID: item.id, isCopied: isCopied, isSelected: isSelected))
         )
         .contentShape(Rectangle())
         .onHover { isHovering in
             hoveredID = isHovering ? item.id : (hoveredID == item.id ? nil : hoveredID)
         }
-        .onDrag {
-            NSItemProvider(contentsOf: item.url) ?? NSItemProvider()
+        .onTapGesture {
+            handleClick(item)
         }
+        .gesture(TapGesture().modifiers(.command).onEnded {
+            store.toggleSelection(item)
+            anchorID = item.id
+        })
+        .gesture(TapGesture().modifiers(.shift).onEnded {
+            store.selectRange(to: item, from: anchorID)
+        })
         .contextMenu {
             Button("Открыть") { store.open(item) }
             Button("Показать в Finder") { store.revealInFinder(item) }
             Button("Открыть с помощью…") { openWith(item) }
             Divider()
-            Button("Скопировать файл") { copy(item) }
+            if isSelected && store.selectedIDs.count > 1 {
+                Button("Скопировать выбранные (\(store.selectedIDs.count))") { copy(item) }
+            } else {
+                Button("Скопировать файл") { copy(item) }
+            }
             Button("Скопировать путь") { store.copyPath(item) }
         }
         .help(item.url.path)
     }
 
-    private func backgroundColor(itemID: String, isCopied: Bool) -> Color {
+    private var copiedLabel: String {
+        store.selectedIDs.count > 1 ? "Скопировано \(store.selectedIDs.count)" : "Скопировано"
+    }
+
+    private func handleClick(_ item: DownloadItem) {
+        if !store.selectedIDs.isEmpty && !store.selectedIDs.contains(item.id) {
+            store.clearSelection()
+        }
+        anchorID = item.id
+        store.open(item)
+    }
+
+    private func dragURLs(for item: DownloadItem) -> [URL] {
+        if store.selectedIDs.count > 1, store.selectedIDs.contains(item.id) {
+            let selected = store.selectedItems.map(\.url)
+            if !selected.isEmpty { return selected }
+        }
+        return [item.url]
+    }
+
+    private func backgroundColor(itemID: String, isCopied: Bool, isSelected: Bool) -> Color {
+        if isSelected { return Color.accentColor.opacity(0.18) }
         if isCopied { return Color.green.opacity(0.16) }
         if hoveredID == itemID { return Color.primary.opacity(0.07) }
         return Color.clear
     }
 
     private func copy(_ item: DownloadItem) {
-        store.copyFile(item)
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.6)) {
-            copiedID = item.id
+        let targets: Set<String>
+        if store.selectedIDs.count > 1, store.selectedIDs.contains(item.id) {
+            store.copySelected()
+            targets = store.selectedIDs
+        } else {
+            store.copyFile(item)
+            targets = [item.id]
         }
-        let targetID = item.id
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.6)) {
+            copiedIDs.formUnion(targets)
+        }
+        let snapshot = targets
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
-            guard copiedID == targetID else { return }
+            guard copiedIDs.isSuperset(of: snapshot) else { return }
             withAnimation(.easeOut(duration: 0.2)) {
-                copiedID = nil
+                copiedIDs.subtract(snapshot)
             }
         }
     }
@@ -326,5 +374,65 @@ struct ShelfView: View {
         if panel.runModal() == .OK, let url = panel.url {
             store.setFolder(url)
         }
+    }
+}
+
+private struct MultiDragSource: NSViewRepresentable {
+    let urls: () -> [URL]
+
+    func makeNSView(context: Context) -> DragHandleView {
+        let view = DragHandleView()
+        view.urlsProvider = urls
+        return view
+    }
+
+    func updateNSView(_ nsView: DragHandleView, context: Context) {
+        nsView.urlsProvider = urls
+    }
+}
+
+final class DragHandleView: NSView, NSDraggingSource {
+    var urlsProvider: () -> [URL] = { [] }
+    private var downPoint: NSPoint?
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        downPoint = convert(event.locationInWindow, from: nil)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = downPoint else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard hypot(point.x - start.x, point.y - start.y) >= 3 else { return }
+        downPoint = nil
+
+        let urls = urlsProvider()
+        guard !urls.isEmpty else { return }
+
+        let icon = NSWorkspace.shared.icon(forFile: urls[0].path)
+        icon.size = NSSize(width: 32, height: 32)
+
+        let draggingItems = urls.map { url -> NSDraggingItem in
+            let pasteboardItem = NSPasteboardItem()
+            pasteboardItem.setString(url.absoluteString, forType: .fileURL)
+            let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
+            draggingItem.setDraggingFrame(
+                NSRect(x: 0, y: 0, width: 32, height: 32),
+                contents: icon
+            )
+            return draggingItem
+        }
+
+        beginDraggingSession(with: draggingItems, event: event, source: self)
+    }
+
+    func draggingSession(
+        _ session: NSDraggingSession,
+        sourceOperationMaskFor context: NSDraggingContext
+    ) -> NSDragOperation {
+        .copy
     }
 }

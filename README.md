@@ -8,10 +8,11 @@ Built with SwiftUI and AppKit, no Electron, no dependencies.
 
 - Menu bar icon showing the last downloads from `~/Downloads`
 - **Drag out** any item into Finder, Mail, Telegram, a browser, or any app that accepts files
+- **Multi-select** with Cmd-click and Shift-click, then drag the whole selection at once
 - One-click **copy file to clipboard** with a green checkmark so you see the click landed
 - Click a row to open the file with its default app
 - Context menu: Open, Show in Finder, Open With..., Copy file, Copy path
-- Shows 5 items, **"More"** expands to 10
+- Shows 5 items, **"More 5"** adds five at a time, up to 100
 - Auto-opens under the menu bar for 3/4/6/8 seconds when a new file arrives (configurable, can be turned off)
 - Live updates via FSEvents, no polling
 - Launch at login (SMAppService)
@@ -45,8 +46,9 @@ Other modes:
 ## Usage
 
 - Click the tray icon in the menu bar to open the shelf.
-- Drag a row to move the actual file somewhere else.
-- The copy icon copies the file itself, not a path.
+- Drag the handle on the right to move the actual file somewhere else.
+- Cmd-click toggles selection, Shift-click selects a range. Drag the handle of a selected row to move the whole selection.
+- The copy icon copies the file itself, not a path. With several rows selected it copies all of them.
 - Settings (gear icon at the bottom): open on download (off / 3 / 4 / 6 / 8 s), launch at login, choose another folder.
 
 ## Notes
@@ -61,7 +63,7 @@ Other modes:
 Sources/DownloadShelf/
   DownloadShelfApp.swift   App entry, status item, panel, auto-open logic
   DownloadsStore.swift     Folder watching (FSEvents), item list, clipboard, login item
-  ShelfView.swift          SwiftUI UI
+  ShelfView.swift          SwiftUI UI, multi-select, drag handle
 build.sh                   Build and install script
 ```
 
@@ -69,7 +71,8 @@ build.sh                   Build and install script
 
 Виджет в строке меню macOS со свежими загрузками. Файлы можно перетаскивать прямо из меню, открывать по клику или копировать в буфер одной кнопкой.
 
-- 5 последних файлов, кнопка «Ещё» раскрывает до 10
+- 5 последних файлов, кнопка «Ещё 5» добавляет по пять, до 100
+- Выделение нескольких файлов (Cmd-клик, Shift-клик) и перетаскивание всей пачки
 - Перетаскивание настоящего файла в любое приложение
 - Копирование файла одной кнопкой, с зелёной галочкой
 - Автооткрытие после скачивания на 3/4/6/8 секунд (настраивается)
