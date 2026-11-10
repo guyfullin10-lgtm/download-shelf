@@ -3,6 +3,7 @@ import Combine
 import Foundation
 import ServiceManagement
 
+
 struct DownloadItem: Identifiable, Equatable {
     let url: URL
     let name: String
@@ -30,8 +31,10 @@ struct DownloadItem: Identifiable, Equatable {
 
 @MainActor
 final class DownloadsStore: ObservableObject {
+
     @Published private(set) var items: [DownloadItem] = []
     @Published private(set) var hasUnseen: Bool = false
+    @Published var selectedIDs: Set<String> = []
     @Published var folder: URL
     @Published private(set) var launchAtLogin: Bool = false
     @Published private(set) var lastAddedAt: Date?
@@ -40,7 +43,7 @@ final class DownloadsStore: ObservableObject {
     }
     @Published private(set) var launchError: String?
 
-    var maxItems: Int = 10
+    var maxItems: Int = 100
     let collapsedCount: Int = 5
 
     private var watcher: DirectoryWatcher?
@@ -70,6 +73,7 @@ final class DownloadsStore: ObservableObject {
         startWatching()
         reload()
         didPrimeSeen = true
+
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -107,8 +111,45 @@ final class DownloadsStore: ObservableObject {
         NSWorkspace.shared.open(item.url)
     }
 
+    var selectedItems: [DownloadItem] {
+        items.filter { selectedIDs.contains($0.id) }
+    }
+
+    func toggleSelection(_ item: DownloadItem) {
+        if selectedIDs.contains(item.id) {
+            selectedIDs.remove(item.id)
+        } else {
+            selectedIDs.insert(item.id)
+        }
+    }
+
+    func selectOnly(_ item: DownloadItem) {
+        selectedIDs = [item.id]
+    }
+
+    func selectRange(to item: DownloadItem, from anchorID: String?) {
+        guard let anchorID,
+              let start = items.firstIndex(where: { $0.id == anchorID }),
+              let end = items.firstIndex(where: { $0.id == item.id }) else {
+            selectOnly(item)
+            return
+        }
+        let range = start <= end ? start...end : end...start
+        selectedIDs = Set(items[range].map(\.id))
+    }
+
+    func clearSelection() {
+        selectedIDs.removeAll()
+    }
+
     func copyFile(_ item: DownloadItem) {
-        Clipboard.copyFile(at: item.url)
+        Clipboard.copyFiles(at: [item.url])
+    }
+
+    func copySelected() {
+        let urls = selectedItems.map(\.url)
+        guard !urls.isEmpty else { return }
+        Clipboard.copyFiles(at: urls)
     }
 
     func copyPath(_ item: DownloadItem) {
@@ -200,6 +241,8 @@ final class DownloadsStore: ObservableObject {
         }
         seenPaths = Set(limited.map(\.id))
 
+        selectedIDs = selectedIDs.intersection(Set(limited.map(\.id)))
+
         let keptKeys = Set(limited.map { "\($0.url.path)#\($0.modifiedAt.timeIntervalSince1970)" })
         iconCache = iconCache.filter { keptKeys.contains($0.key) }
 
@@ -264,11 +307,15 @@ final class DirectoryWatcher {
 }
 
 enum Clipboard {
-    static func copyFile(at url: URL) {
+    static func copyFiles(at urls: [URL]) {
+        guard !urls.isEmpty else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        let pasteItem = NSPasteboardItem()
-        pasteItem.setString(url.absoluteString, forType: .fileURL)
-        pasteboard.writeObjects([pasteItem])
+        let items = urls.map { url -> NSPasteboardItem in
+            let pasteItem = NSPasteboardItem()
+            pasteItem.setString(url.absoluteString, forType: .fileURL)
+            return pasteItem
+        }
+        pasteboard.writeObjects(items)
     }
 }

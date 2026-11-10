@@ -79,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func hidePanel() {
         panel.orderOut(nil)
         removeMonitors()
+        store.clearSelection()
     }
 
     private func handleNewDownload() {
@@ -155,7 +156,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             if event.type == .keyDown && event.keyCode == 53 {
-                Task { @MainActor in self?.hidePanel() }
+                Task { @MainActor in
+                    guard let self else { return }
+                    if !self.store.selectedIDs.isEmpty {
+                        self.store.clearSelection()
+                    } else {
+                        self.hidePanel()
+                    }
+                }
                 return nil
             }
             return event
