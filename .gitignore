@@ -1,0 +1,5 @@
+.build/
+.swiftpm/
+DownloadShelf.app/
+.DS_Store
+*.xcuserstate
